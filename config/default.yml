@@ -1,0 +1,15 @@
+chrome:
+  launcher:
+    port: 9222
+    chromeFlags:
+      - --headless
+      - --disable-gpu
+      - --no-sandbox
+    chromePath: /home/hisakazu-fu/.usr/local/cad117/google-chrome-stable/opt/google/chrome/chrome
+  device:
+    width: 320
+    height: 568
+    deviceScaleFactor: 0
+    mobile: true
+    fitWindow: false
+

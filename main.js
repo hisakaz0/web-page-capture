@@ -2,6 +2,7 @@ const { Launcher } = require('chrome-launcher');
 const CDP = require('chrome-remote-interface');
 const util = require('util');
 const fs = require('fs');
+const config = require('config');
 
 const writeFile = util.promisify(fs.writeFile);
 
@@ -37,14 +38,7 @@ const getFullPageSizeScript = `(${getFullPageSize.toString()})()`;
 
 async function main() {
   // Chromeを起動
-  const launcher = new Launcher({
-    port: 9222,
-    chromeFlags: [
-      '--headless',
-      '--disable-gpu',
-      '--no-sandbox',
-    ]
-  });
+  const launcher = new Launcher(config.get('chrome.launcher'));
   await launcher.launch();
 
   // Chrome DevTools Protocolを使う準備
@@ -53,13 +47,7 @@ async function main() {
   await Promise.all([Page.enable(), Runtime.enable()]);
 
   // デバイスのサイズを設定
-  const deviceMetrics = {
-    width: 1440,
-    height: 900,
-    deviceScaleFactor: 0,
-    mobile: false,
-    fitWindow: false,
-  };
+  const deviceMetrics = config.get('chrome.device');
   await setDeviceSize(Emulation, deviceMetrics);
 
   // ページにアクセスして読み込みが完了するまで待機
