@@ -1,0 +1,21 @@
+{
+  "name": "web-page-capture",
+  "version": "1.0.0",
+  "description": "Capturing web pages to review the design.",
+  "main": "main.js",
+  "dependencies": {
+    "chrome-launcher": "^0.6.0",
+    "chrome-remote-interface": "^0.24.5",
+    "config": "^1.26.2",
+    "fs": "^0.0.1-security",
+    "js-yaml": "^3.9.1",
+    "node-config": "^0.0.2",
+    "util": "^0.10.3"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC"
+}
