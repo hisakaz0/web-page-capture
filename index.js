@@ -7,6 +7,10 @@ const yaml = require('js-yaml');
 
 const writeFile = util.promisify(fs.writeFile);
 
+function onError(err) {
+	console.log(err);
+}
+
 async function setDeviceSize(Emulation, deviceMetrics) {
   const { width, height } = deviceMetrics;
   await Emulation.setDeviceMetricsOverride(deviceMetrics);
@@ -40,43 +44,55 @@ async function main() {
   const launcher = new Launcher(config.get('chrome.launcher'));
   await launcher.launch();
 
+  // ページリストを取得
+  const pagesList = yaml.safeLoad(fs.readFileSync('pages-list.yml', 'utf8'));
+	const url = pagesList[0].url;
+	const imagePath = pagesList[0].imagePath;
+
+	// device情報を取得
+	const device = config.get('device.iphone6');
+		
   // Chrome DevTools Protocolを使う準備
   const client = await CDP();
-  const { Page, Runtime, Emulation } = client;
-  await Promise.all([Page.enable(), Runtime.enable()]);
+  const { Page, Runtime, Emulation, Network } = client;
+
+	// userAgentの設定
+ 	await	Network.enable();
+	await Network.setUserAgentOverride({ userAgent: device.userAgent })
+		.catch(onError);
 
   // デバイスのサイズを設定
   const deviceMetrics = config.get('chrome.device');
-  await setDeviceSize(Emulation, deviceMetrics);
+  await setDeviceSize(Emulation, Object.assign({}, deviceMetrics, {
+		width: device.width, height: device.height
+	}))
+		.catch(onError);
 
-  // To capture web pages of the yaml list
-  const pagesList = yaml.safeLoad(fs.readFileSync('pages-list.yml', 'utf8'));
+  // ページにアクセスして読み込みが完了するまで待機
+  await Page.enable();
+  Page.navigate({ url: url });
+  await Page.loadEventFired();
 
-  pagesList.forEach(async function(currentValue, index, array) {
-    // ページにアクセスして読み込みが完了するまで待機
-    Page.navigate({ url: currentValue.url });
-    await Page.loadEventFired();
+  // ページの最下部までスクロール
+	await Runtime.enable();
+  await Runtime.evaluate({ expression: scrollToBottomScript, awaitPromise: true });
 
-    // ページの最下部までスクロール
-    await Runtime.evaluate({ expression: scrollToBottomScript, awaitPromise: true });
-
-    // ブラウザからscrollWidthとscrollHeightを取得
-    const { result: { value } } = await Runtime.evaluate({
-      expression: getFullPageSizeScript,
-      returnByValue: true
-    });
-    const { width, height } = JSON.parse(value);
-
-    // デバイスのサイズをページのサイズに合わせる
-    await setDeviceSize(Emulation, Object.assign({}, deviceMetrics, {
-      width: Math.max(width, deviceMetrics.width),
-      height: Math.max(height, deviceMetrics.height)
-    }));
-
-    // スクリーンショットを取得、保存
-    const { data } = await Page.captureScreenshot({ fromSurface: true });
-    await writeFile(currentValue.imagePath, Buffer.from(data, 'base64'));
+  // ブラウザからscrollWidthとscrollHeightを取得
+  const { result: { value } } = await Runtime.evaluate({
+  expression: getFullPageSizeScript,
+  returnByValue: true
   });
+  const { width, height } = JSON.parse(value);
+
+  // デバイスのサイズをページのサイズに合わせる
+  await setDeviceSize(Emulation, Object.assign({}, deviceMetrics, {
+  width: Math.max(width, device.width),
+  height: Math.max(height, device.height)
+  }));
+
+  // スクリーンショットを取得、保存
+  const { data } = await Page.captureScreenshot({ fromSurface: true });
+  await writeFile(imagePath, Buffer.from(data, 'base64'));
 
   // 終了処理
   client.close();
