@@ -39,25 +39,9 @@ const getFullPageSize = () => JSON.stringify({
 // ブラウザ内で実行するために文字列化
 const getFullPageSizeScript = `(${getFullPageSize.toString()})()`;
 
-async function main() {
-  // Chromeを起動
-  const launcher = new Launcher(config.get('chrome.launcher'));
-  await launcher.launch();
-
-  // ページリストを取得
-  const pagesList = yaml.safeLoad(fs.readFileSync('pages-list.yml', 'utf8'));
-	const url = pagesList[0].url;
-	const imagePath = pagesList[0].imagePath;
-
-	// device情報を取得
-	const device = config.get('device.iphone6');
-		
-  // Chrome DevTools Protocolを使う準備
-  const client = await CDP();
-  const { Page, Runtime, Emulation, Network } = client;
-
+async function pageCapture(url, imagePath, device,
+	Page, Runtime, Emulation, Network) {
 	// userAgentの設定
- 	await	Network.enable();
 	await Network.setUserAgentOverride({ userAgent: device.userAgent })
 		.catch(onError);
 
@@ -69,18 +53,16 @@ async function main() {
 		.catch(onError);
 
   // ページにアクセスして読み込みが完了するまで待機
-  await Page.enable();
   Page.navigate({ url: url });
   await Page.loadEventFired();
 
   // ページの最下部までスクロール
-	await Runtime.enable();
   await Runtime.evaluate({ expression: scrollToBottomScript, awaitPromise: true });
 
   // ブラウザからscrollWidthとscrollHeightを取得
   const { result: { value } } = await Runtime.evaluate({
-  expression: getFullPageSizeScript,
-  returnByValue: true
+		expression: getFullPageSizeScript,
+		returnByValue: true
   });
   const { width, height } = JSON.parse(value);
 
@@ -93,6 +75,29 @@ async function main() {
   // スクリーンショットを取得、保存
   const { data } = await Page.captureScreenshot({ fromSurface: true });
   await writeFile(imagePath, Buffer.from(data, 'base64'));
+}
+
+async function main() {
+  // Chromeを起動
+  const launcher = new Launcher(config.get('chrome.launcher'));
+  await launcher.launch();
+
+  // Chrome DevTools Protocolを使う準備
+  const client = await CDP();
+  const { Page, Runtime, Emulation, Network } = client;
+	await Promise.all([ Page.enable(), Runtime.enable(), Network.enable() ]);
+
+	// device情報を取得
+	const device = config.get('device.iphone6');
+
+  // ページリストを取得
+  const pagesList = yaml.safeLoad(fs.readFileSync('pages-list.yml', 'utf8'));
+
+	// 全ページをキャプチャする
+	await Promise.all(pagesList.map(async (page) => {
+		await pageCapture(page.url, page.imagePath, device,
+			Page, Runtime, Emulation, Network);
+	}));
 
   // 終了処理
   client.close();
