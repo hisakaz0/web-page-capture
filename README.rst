@@ -12,13 +12,15 @@ Install
 =======
 
 ::
-  npm install
+  
+    npm install
 
 
 How to use
 ==========
 
 ::
+
   CHROME_PATH=<Path to chrome>
   node index.js --url <url> --path <imagePath> [--device iphone6|desktop]
 
