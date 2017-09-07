@@ -4,11 +4,22 @@ const util = require('util');
 const fs = require('fs');
 const config = require('config');
 const yaml = require('js-yaml');
+const argv = require('minimist')(process.argv.slice(2));
 
 const writeFile = util.promisify(fs.writeFile);
 
+// CLI args
+const deviceName = argv.device || 'iphone6';
+const url        = argv.url != undefined ? argv.url : (() => {
+  throw new Error("Please set a url arg with '--url <url>'.");
+})();
+const imagePath  = argv.path != undefined ? argv.path : (() => {
+  throw new Error("Please set a path arg with '--path <imagePath>'.");
+})();
+
+
 function onError(err) {
-	console.log(err);
+  console.log(err);
 }
 
 async function setDeviceSize(Emulation, deviceMetrics) {
@@ -39,45 +50,7 @@ const getFullPageSize = () => JSON.stringify({
 // ブラウザ内で実行するために文字列化
 const getFullPageSizeScript = `(${getFullPageSize.toString()})()`;
 
-async function pageCapture(url, imagePath, device,
-	Page, Runtime, Emulation, Network) {
-	// userAgentの設定
-	await Network.setUserAgentOverride({ userAgent: device.userAgent })
-		.catch(onError);
-
-  // デバイスのサイズを設定
-  const deviceMetrics = config.get('chrome.device');
-  await setDeviceSize(Emulation, Object.assign({}, deviceMetrics, {
-		width: device.width, height: device.height
-	}))
-		.catch(onError);
-
-  // ページにアクセスして読み込みが完了するまで待機
-  Page.navigate({ url: url });
-  await Page.loadEventFired();
-
-  // ページの最下部までスクロール
-  await Runtime.evaluate({ expression: scrollToBottomScript, awaitPromise: true });
-
-  // ブラウザからscrollWidthとscrollHeightを取得
-  const { result: { value } } = await Runtime.evaluate({
-		expression: getFullPageSizeScript,
-		returnByValue: true
-  });
-  const { width, height } = JSON.parse(value);
-
-  // デバイスのサイズをページのサイズに合わせる
-  await setDeviceSize(Emulation, Object.assign({}, deviceMetrics, {
-  width: Math.max(width, device.width),
-  height: Math.max(height, device.height)
-  }));
-
-  // スクリーンショットを取得、保存
-  const { data } = await Page.captureScreenshot({ fromSurface: true });
-  await writeFile(imagePath, Buffer.from(data, 'base64'));
-}
-
-async function main() {
+async function pageCapture(url, imagePath, device) {
   // Chromeを起動
   const launcher = new Launcher(config.get('chrome.launcher'));
   await launcher.launch();
@@ -85,22 +58,53 @@ async function main() {
   // Chrome DevTools Protocolを使う準備
   const client = await CDP();
   const { Page, Runtime, Emulation, Network } = client;
-	await Promise.all([ Page.enable(), Runtime.enable(), Network.enable() ]);
 
-	// device情報を取得
-	const device = config.get('device.iphone6');
+  // userAgentの設定
+  await Network.enable();
+  await Network.setUserAgentOverride({ userAgent: device.userAgent });
 
-  // ページリストを取得
-  const pagesList = yaml.safeLoad(fs.readFileSync('pages-list.yml', 'utf8'));
+  // デバイスのサイズを設定
+  const deviceMetrics = config.get('chrome.device');
+  await setDeviceSize(Emulation, Object.assign({}, deviceMetrics, {
+    width: device.width, height: device.height
+  }));
 
-	// 全ページをキャプチャする
-	await Promise.all(pagesList.map(async (page) => {
-		await pageCapture(page.url, page.imagePath, device,
-			Page, Runtime, Emulation, Network);
-	}));
+  // ページにアクセスして読み込みが完了するまで待機
+  await Page.enable();
+  Page.navigate({ url: url });
+  await Page.loadEventFired();
+
+  // ページの最下部までスクロール
+  await Runtime.enable();
+  await Runtime.evaluate({ expression: scrollToBottomScript, awaitPromise: true });
+
+  // ブラウザからscrollWidthとscrollHeightを取得
+  const { result: { value } } = await Runtime.evaluate({
+    expression: getFullPageSizeScript,
+    returnByValue: true
+  });
+  const { width, height } = JSON.parse(value);
+
+  // デバイスのサイズをページのサイズに合わせる
+  await setDeviceSize(Emulation, Object.assign({}, deviceMetrics, {
+    width: Math.max(width, device.width),
+    height: Math.max(height, device.height)
+  }));
+
+  // スクリーンショットを取得、保存
+  const { data } = await Page.captureScreenshot({ fromSurface: true });
+  await writeFile(imagePath, Buffer.from(data, 'base64'));
 
   // 終了処理
   client.close();
   launcher.kill();
+}
+
+async function main() {
+  // device情報を取得
+  const device = config.get(`device.${deviceName}`);
+
+  // ページをキャプチャする
+  await pageCapture(url, imagePath, device);
 }
 main();
